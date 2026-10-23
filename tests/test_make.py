@@ -2834,6 +2834,109 @@ class TestAutoDetect:
         assert hash(C("1")) == hash(C(1))
         assert hash(D("1")) != hash(D(1))
 
+    @pytest.mark.parametrize("slots", [True, False])
+    @pytest.mark.parametrize("cache_hash", [True, False])
+    def test_hash_callable(self, slots, cache_hash):
+        """
+        A callable *hash* is a key function for the generated ``__hash__``.
+        """
+
+        @attr.s(slots=slots, unsafe_hash=True, cache_hash=cache_hash)
+        class C:
+            x = attr.ib(hash=tuple)
+
+        assert hash(C([1, 2])) == hash(C([1, 2]))
+        assert hash(C([1])) != hash(C([2]))
+        assert 2 == len({C([1]), C([1]), C([2])})
+
+        field = fields(C).x
+
+        assert True is field.hash
+        assert tuple is field.hash_key
+
+    def test_hash_callable_overrides_eq_key(self):
+        """
+        An explicit hash key is used instead of the equality key.
+        """
+
+        @attr.s(frozen=True)
+        class C:
+            x = attr.ib(eq=str, hash=int)
+
+        # "1" and "01" are not equal under str(), but they share an int key.
+        assert C("1") != C("01")
+        assert hash(C("1")) == hash(C("01"))
+        assert int is fields(C).x.hash_key
+
+    def test_hash_key_pickle_roundtrip(self):
+        """
+        hash_key survives pickling an Attribute.
+        """
+
+        @attr.define(frozen=True)
+        class C:
+            x = attr.field(hash=tuple)
+
+        original = fields(C).x
+        restored = pickle.loads(pickle.dumps(original))
+
+        assert tuple is restored.hash_key
+        assert original == restored
+
+    def test_unpickle_unexpected_missing_slot(self):
+        """
+        A pickle that is missing a slot other than the known suffix errors.
+        """
+
+        @attr.define
+        class C:
+            x = attr.field()
+
+        original = fields(C).x
+        # Drop from ``eq_key`` onward. That gap is not ``alias_is_default``
+        # or ``hash_key``, so it cannot be filled in.
+        short = original.__getstate__()[:5]
+
+        with pytest.raises(ValueError, match="unexpected missing state"):
+            original.__setstate__(short)
+
+    def test_evolve_hash_callable(self):
+        """
+        ``Attribute.evolve`` normalizes a callable *hash* into *hash_key*.
+
+        Field transformers pass attributes through ``evolve``, so a callable
+        has to become ``hash=True`` plus ``hash_key`` before ``__hash__`` is
+        generated.
+        """
+
+        def transform(cls, attribs):
+            return [
+                a.evolve(hash=tuple) if a.name == "x" else a for a in attribs
+            ]
+
+        @attr.define(frozen=True, field_transformer=transform)
+        class C:
+            x: list
+            y: int
+
+        evolved = fields(C).x.evolve(hash=len)
+
+        assert True is fields(C).x.hash
+        assert tuple is fields(C).x.hash_key
+        assert None is fields(C).y.hash_key
+        assert len is evolved.hash_key
+        assert hash(C([1, 2], 1)) == hash(C([1, 2], 1))
+        assert hash(C([1], 1)) != hash(C([2], 1))
+
+        # An explicit hash_key wins over a callable passed as hash, and a
+        # later boolean hash leaves the key in place.
+        both = fields(C).x.evolve(hash=str, hash_key=len)
+        kept = both.evolve(hash=True)
+
+        assert True is both.hash
+        assert len is both.hash_key
+        assert len is kept.hash_key
+
     def test_detect_auto_hash(self, slots, frozen):
         """
         If auto_detect=True and an __hash__ exists, don't write one.

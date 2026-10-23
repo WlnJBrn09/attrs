@@ -161,14 +161,12 @@ def attrib(
     .. versionchanged:: 26.2.0
        *on_setattr* hooks can now be generator functions to run code before and
        after an attribute is set.
+    .. versionchanged:: 26.2.0 *hash* now also accepts a callable key function.
     """
     eq, eq_key, order, order_key = _determine_attrib_eq_order(
         cmp, eq, order, True
     )
-
-    if hash is not None and hash is not True and hash is not False:
-        msg = "Invalid value for hash.  Must be True, False, or None."
-        raise TypeError(msg)
+    hash, hash_key = _determine_attrib_hash(hash)
 
     if factory is not None:
         if default is not NOTHING:
@@ -211,6 +209,7 @@ def attrib(
         order_key=order_key,
         on_setattr=on_setattr,
         alias=alias,
+        hash_key=hash_key,
     )
 
 
@@ -1324,6 +1323,27 @@ def _determine_attrib_eq_order(cmp, eq, order, default_eq):
     return eq, eq_key, order, order_key
 
 
+def _determine_attrib_hash(hash, hash_key=None):
+    """
+    Normalize *hash* into a boolean participation flag and an optional key.
+
+    A callable *hash* means "include this attribute, and hash the callable's
+    return value".
+    """
+    if callable(hash):
+        if hash_key is None:
+            hash_key = hash
+        hash = True
+    elif hash is not None and hash is not True and hash is not False:
+        msg = (
+            "Invalid value for hash.  "
+            "Must be True, False, None, or a callable."
+        )
+        raise TypeError(msg)
+
+    return hash, hash_key
+
+
 def _determine_whether_to_implement(
     cls, flag, auto_detect, dunders, default=True
 ):
@@ -1683,11 +1703,14 @@ def _make_hash_script(
         )
 
         for a in attrs:
-            if a.eq_key:
-                cmp_name = f"_{a.name}_key"
-                globs[cmp_name] = a.eq_key
+            # An explicit hash key wins. Otherwise reuse the equality key so
+            # that values that compare equal also hash equal.
+            key_fn = a.hash_key if a.hash_key is not None else a.eq_key
+            if key_fn is not None:
+                key_name = f"_{a.name}_hashkey"
+                globs[key_name] = key_fn
                 method_lines.append(
-                    indent + f"        {cmp_name}(self.{a.name}),"
+                    indent + f"        {key_name}(self.{a.name}),"
                 )
             else:
                 method_lines.append(indent + f"        self.{a.name},")
@@ -2482,6 +2505,10 @@ class Attribute:
       attribute, respectively. These are set by passing a callable to
       `attr.ib`'s ``eq``, ``order``, or ``cmp`` arguments. See also
       :ref:`comparison customization <custom-comparison>`.
+    - ``hash_key`` (`typing.Callable` or `None`): The callable that is used
+      when hashing this attribute. Set by passing a callable to `attr.ib`'s
+      ``hash`` argument. When this is `None` and ``eq_key`` is set, hashing
+      uses ``eq_key`` so that equal values keep equal hashes.
 
     Instances of this class are frequently used for introspection purposes
     like:
@@ -2501,6 +2528,7 @@ class Attribute:
     .. versionadded:: 21.1.0 *eq_key* and *order_key*
     .. versionadded:: 22.2.0 *alias*
     .. versionadded:: 26.1.0 *alias_is_default*
+    .. versionadded:: 26.2.0 *hash_key*
 
     For the full version history of the fields, see `attr.ib`.
     """
@@ -2526,6 +2554,7 @@ class Attribute:
         "on_setattr",
         "alias",
         "alias_is_default",
+        "hash_key",
     )
 
     def __init__(
@@ -2549,10 +2578,12 @@ class Attribute:
         on_setattr=None,
         alias=None,
         alias_is_default=None,
+        hash_key=None,
     ):
         eq, eq_key, order, order_key = _determine_attrib_eq_order(
             cmp, eq_key or eq, order_key or order, True
         )
+        hash, hash_key = _determine_attrib_hash(hash, hash_key)
 
         # Cache this descriptor here to speed things up later.
         bound_setattr = _OBJ_SETATTR.__get__(self)
@@ -2587,6 +2618,7 @@ class Attribute:
             "alias_is_default",
             alias is None if alias_is_default is None else alias_is_default,
         )
+        bound_setattr("hash_key", hash_key)
 
     def __setattr__(self, name, value):
         raise FrozenInstanceError
@@ -2623,6 +2655,7 @@ class Attribute:
             ca.on_setattr,
             ca.alias,
             ca.alias is None,
+            ca.hash_key,
         )
 
     # Don't use attrs.evolve since fields(Attribute) doesn't work
@@ -2638,6 +2671,19 @@ class Attribute:
         .. versionadded:: 20.3.0
         """
         import copy
+
+        if "hash" in changes or "hash_key" in changes:
+            hash_arg = changes.get("hash", self.hash)
+            if "hash_key" in changes:
+                hash_key_arg = changes["hash_key"]
+            elif callable(hash_arg):
+                # A new callable replaces any previous key.
+                hash_key_arg = None
+            else:
+                hash_key_arg = self.hash_key
+            changes["hash"], changes["hash_key"] = _determine_attrib_hash(
+                hash_arg, hash_key_arg
+            )
 
         new = copy.copy(self)
 
@@ -2673,16 +2719,28 @@ class Attribute:
         """
         Play nice with pickle.
         """
+        # Slots are only appended. Fill any that this pickle does not have.
         if len(state) < len(self.__slots__):
-            # Pre-26.1.0 pickle without alias_is_default -- infer it
-            # heuristically.
-            state_dict = dict(zip(self.__slots__, state, strict=False))
-            alias_is_default = state_dict.get(
-                "alias"
-            ) is None or state_dict.get("alias") == _default_init_alias_for(
-                state_dict["name"]
-            )
-            state = (*state, alias_is_default)
+            state = list(state)
+            for name in self.__slots__[len(state) :]:
+                if name == "alias_is_default":
+                    # Pre-26.1.0 pickle without alias_is_default.
+                    state_dict = dict(zip(self.__slots__, state, strict=False))
+                    alias = state_dict.get("alias")
+                    attr_name = state_dict.get("name")
+                    state.append(
+                        alias is None
+                        or alias == _default_init_alias_for(attr_name)
+                    )
+                elif name == "hash_key":
+                    state.append(None)
+                else:
+                    msg = (
+                        "Cannot unpickle Attribute: unexpected missing "
+                        f"state for {name!r}."
+                    )
+                    raise ValueError(msg)
+            state = tuple(state)
 
         self._setattrs(zip(self.__slots__, state, strict=True))
 
@@ -2707,7 +2765,7 @@ _a = [
         name=name,
         default=NOTHING,
         validator=None,
-        repr=(name != "alias_is_default"),
+        repr=name not in ("alias_is_default", "hash_key"),
         cmp=None,
         eq=True,
         order=False,
@@ -2746,6 +2804,7 @@ class _CountingAttr:
         "eq",
         "eq_key",
         "hash",
+        "hash_key",
         "init",
         "kw_only",
         "metadata",
@@ -2824,6 +2883,7 @@ class _CountingAttr:
         order_key,
         on_setattr,
         alias,
+        hash_key,
     ):
         _CountingAttr.cls_counter += 1
         self.counter = _CountingAttr.cls_counter
@@ -2836,6 +2896,7 @@ class _CountingAttr:
         self.order = order
         self.order_key = order_key
         self.hash = hash
+        self.hash_key = hash_key
         self.init = init
         self.metadata = metadata
         self.type = type

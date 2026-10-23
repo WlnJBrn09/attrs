@@ -211,6 +211,25 @@ def accessing_from_attrs() -> None:
     attrs.cmp_using
 
 
+def _list_key(value: list[int]) -> tuple[int, ...]:
+    return tuple(value)
+
+
+@attrs.define(frozen=True)
+class HashKey:
+    x: list[int] = attrs.field(hash=_list_key)
+
+
+def read_hash_key(attribute: attrs.Attribute[list[int]]) -> tuple[int, ...]:
+    """
+    hash_key is the callable passed to field(hash=...).
+    """
+    key = attribute.hash_key
+    if key is None:
+        return ()
+    return key([1])
+
+
 @attrs.define(unsafe_hash=True)
 class Hashable:
     pass

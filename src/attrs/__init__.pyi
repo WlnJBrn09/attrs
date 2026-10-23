@@ -76,7 +76,7 @@ def field(
     default: None = ...,
     validator: None = ...,
     repr: _ReprArgType = ...,
-    hash: bool | None = ...,
+    hash: bool | Callable[[Any], Any] | None = ...,
     init: bool = ...,
     metadata: Mapping[Any, Any] | None = ...,
     converter: None = ...,
@@ -97,7 +97,7 @@ def field(
     default: None = ...,
     validator: _ValidatorArgType[_T] | None = ...,
     repr: _ReprArgType = ...,
-    hash: bool | None = ...,
+    hash: bool | Callable[[Any], Any] | None = ...,
     init: bool = ...,
     metadata: Mapping[Any, Any] | None = ...,
     converter: _ConverterType
@@ -120,7 +120,7 @@ def field(
     default: _T,
     validator: _ValidatorArgType[_T] | None = ...,
     repr: _ReprArgType = ...,
-    hash: bool | None = ...,
+    hash: bool | Callable[[Any], Any] | None = ...,
     init: bool = ...,
     metadata: Mapping[Any, Any] | None = ...,
     converter: _ConverterType
@@ -143,7 +143,7 @@ def field(
     default: _T | None = ...,
     validator: _ValidatorArgType[_T] | None = ...,
     repr: _ReprArgType = ...,
-    hash: bool | None = ...,
+    hash: bool | Callable[[Any], Any] | None = ...,
     init: bool = ...,
     metadata: Mapping[Any, Any] | None = ...,
     converter: _ConverterType

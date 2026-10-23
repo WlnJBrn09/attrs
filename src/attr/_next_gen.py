@@ -521,11 +521,19 @@ def field(
 
             .. seealso:: `comparison`
 
-        hash (bool | None):
+        hash (bool | None | ~typing.Callable):
             Include this attribute in the generated ``__hash__`` method.  If
             None (default), mirror *eq*'s value.  This is the correct behavior
             according the Python spec.  Setting this value to anything else
             than None is *discouraged*.
+
+            To customize *what* is hashed, pass a callable that takes the
+            attribute value and returns the value that is hashed.
+            The callable is stored on `attrs.Attribute.hash_key`.
+            When *hash* is left at `None` and *eq* is a callable, that
+            equality key is used for hashing too, so values that compare equal
+            keep equal hashes.
+            A hash key must stay consistent with equality.
 
             .. seealso:: `hashing`
 
@@ -601,6 +609,7 @@ def field(
     .. versionchanged:: 26.2.0
        *on_setattr* hooks can now be generator functions that yield exactly
        once.
+    .. versionchanged:: 26.2.0 *hash* now also accepts a callable key function.
 
     .. seealso::
 

@@ -69,6 +69,34 @@ The field-level argument is still called `hash` and will remain so.
 :::
 
 
+## Customizing Field Hashes
+
+By default, the field-level *hash* argument mirrors *eq*.
+Pass a callable instead to hash a derived value, which is how you hash otherwise unhashable objects such as lists:
+
+```{doctest}
+>>> from attrs import define, field, fields
+>>> @define(frozen=True)
+... class C:
+...     x: list = field(hash=tuple)
+>>> hash(C([1, 2])) == hash(C([1, 2]))
+True
+>>> len({C([1]), C([1]), C([2])})
+2
+>>> fields(C).x.hash is True
+True
+>>> fields(C).x.hash_key is tuple
+True
+```
+
+The callable receives the attribute value and its return value is what goes into the hash.
+It is stored on {attr}`attrs.Attribute.hash_key`.
+
+If *hash* stays `None` and *eq* is a callable, that equality key is reused for hashing.
+That keeps the hash consistent with equality.
+If you pass your own hash key, it has to agree with equality: objects that compare equal must hash equal.
+
+
 ## Hashing and Mutability
 
 Changing any field involved in hash code computation after the first call to `__hash__` (typically this would be after its insertion into a hash-based collection) can result in silent bugs.

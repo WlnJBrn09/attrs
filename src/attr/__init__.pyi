@@ -130,6 +130,7 @@ class Attribute(Generic[_T]):
     eq: _EqOrderType
     order: _EqOrderType
     hash: bool | None
+    hash_key: Callable[[Any], Any] | None
     init: bool
     converter: Converter | None
     metadata: dict[Any, Any]
@@ -173,7 +174,7 @@ def attrib(
     validator: None = ...,
     repr: _ReprArgType = ...,
     cmp: _EqOrderType | None = ...,
-    hash: bool | None = ...,
+    hash: bool | Callable[[Any], Any] | None = ...,
     init: bool = ...,
     metadata: Mapping[Any, Any] | None = ...,
     type: None = ...,
@@ -194,7 +195,7 @@ def attrib(
     validator: _ValidatorArgType[_T] | None = ...,
     repr: _ReprArgType = ...,
     cmp: _EqOrderType | None = ...,
-    hash: bool | None = ...,
+    hash: bool | Callable[[Any], Any] | None = ...,
     init: bool = ...,
     metadata: Mapping[Any, Any] | None = ...,
     type: type[_T] | None = ...,
@@ -217,7 +218,7 @@ def attrib(
     validator: _ValidatorArgType[_T] | None = ...,
     repr: _ReprArgType = ...,
     cmp: _EqOrderType | None = ...,
-    hash: bool | None = ...,
+    hash: bool | Callable[[Any], Any] | None = ...,
     init: bool = ...,
     metadata: Mapping[Any, Any] | None = ...,
     type: type[_T] | None = ...,
@@ -240,7 +241,7 @@ def attrib(
     validator: _ValidatorArgType[_T] | None = ...,
     repr: _ReprArgType = ...,
     cmp: _EqOrderType | None = ...,
-    hash: bool | None = ...,
+    hash: bool | Callable[[Any], Any] | None = ...,
     init: bool = ...,
     metadata: Mapping[Any, Any] | None = ...,
     type: object = ...,

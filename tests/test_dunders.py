@@ -493,8 +493,9 @@ class TestAddHash:
 
     def test_enforces_type(self):
         """
-        The `hash` argument to both attrs and attrib must be None, True, or
-        False.
+        Class-level hash must be None, True, or False.
+
+        Field-level hash must be one of those or a callable.
         """
         exc_args = ("Invalid value for hash.  Must be True, False, or None.",)
 
@@ -503,10 +504,17 @@ class TestAddHash:
 
         assert exc_args == e.value.args
 
+        field_exc = (
+            (
+                "Invalid value for hash.  "
+                "Must be True, False, None, or a callable."
+            ),
+        )
+
         with pytest.raises(TypeError) as e:
             make_class("C", {"a": attr.ib(hash=1)})
 
-        assert exc_args == e.value.args
+        assert field_exc == e.value.args
 
     def test_enforce_no_cache_hash_without_hash(self):
         """
